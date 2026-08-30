@@ -1,0 +1,19 @@
+{
+  "name": "lumera-bot-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "bot": "node src/bot.js",
+    "prod": "pm2 start ecosystem.config.cjs",
+    "prod:stop": "pm2 stop ecosystem.config.cjs",
+    "prod:logs": "pm2 logs"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "pm2": "^6.0.13"
+  }
+}

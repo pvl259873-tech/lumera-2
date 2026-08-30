@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="لوحة تحكم Lumera Bot لإدارة مجتمعك بسهولة">
+  <title>Lumera Bot | لوحة التحكم</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">L</span><span>Lumera <small>BOT CONTROL</small></span></div>
+      <div class="workspace-switch"><span class="server-icon">L</span><span><strong>Lumera Community</strong><small>مساحة العمل الحالية</small></span><span class="chevron">⌄</span></div>
+      <nav class="nav" aria-label="التنقل الرئيسي">
+        <p>الرئيسية</p>
+        <a class="active" href="#overview"><span>◈</span>نظرة عامة</a>
+        <a href="#commands"><span>⌘</span>الأوامر والاختصارات</a>
+        <a href="#settings"><span>⚙</span>إعدادات البوت</a>
+        <p>الإعدادات</p>
+      </nav>
+      <div class="sidebar-footer"><span class="status-dot"></span><span><strong>البوت متصل</strong><small>يعمل بشكل طبيعي</small></span><button class="icon-button" aria-label="خيارات">•••</button></div>
+    </aside>
+
+    <main class="main" id="overview">
+      <header class="topbar"><button class="mobile-menu" aria-label="فتح القائمة">☰</button><div class="breadcrumbs">لوحة التحكم <span>/</span> نظرة عامة</div><div class="top-actions"><button class="outline-button" id="authButton">تسجيل الدخول</button></div></header>
+      <section class="hero reveal"><div><p class="eyebrow">الخميس، 27 أغسطس 2026</p><h1>أهلًا بك في <em>Lumera</em></h1><p class="hero-copy">كل أدوات سيرفرك في مكان واحد. خلّ الإدارة تمشي على إيقاعك.</p></div><div class="hero-art"><span class="pulse-ring"></span><span class="spark">✦</span><strong>24/7</strong><small>ONLINE</small></div></section>
+      <div class="notice reveal"><span class="notice-icon">✓</span><span><strong>كل شيء جاهز للعمل</strong><small>آخر مزامنة مع Discord قبل دقيقة واحدة</small></span><button aria-label="إغلاق التنبيه">×</button></div>
+
+      <section class="stats-grid reveal"><article class="stat-card"><span class="stat-label">الأعضاء</span><strong>—</strong><span class="trend">سجّل دخولك لعرض البيانات</span></article><article class="stat-card accent"><span class="stat-label">التذاكر المفتوحة</span><strong>—</strong><span class="trend">سجّل دخولك لعرض البيانات</span></article><article class="stat-card"><span class="stat-label">الإنفايت</span><strong>—</strong><span class="trend">سجّل دخولك لعرض البيانات</span></article><article class="stat-card dark"><span class="stat-label">وقت التشغيل</span><strong>—</strong><span class="trend light">بيانات Discord غير مرتبطة</span></article></section>
+
+      <div class="content-grid"><section class="panel quick-panel reveal" id="commands"><div class="panel-heading"><div><p class="eyebrow">ADMIN CONTROL</p><h2>الأوامر والاختصارات</h2></div></div><label>السيرفر<select id="guildSelect"><option value="">سجّل الدخول أولًا</option></select></label><form id="shortcutForm"><input id="shortcutName" placeholder="اسم الاختصار" required maxlength="20"><select id="shortcutCommand"><option value="invite">تقرير الدعوات</option><option value="clear">مسح رسائل</option><option value="kick">طرد</option><option value="ban">حظر</option><option value="timeout">تايم أوت</option><option value="untimeout">إزالة التايم أوت</option><option value="lock">قفل الشات</option><option value="unlock">فتح الشات</option><option value="slowmode">سلو مود</option><option value="warn">تحذير</option><option value="role_add">إعطاء رتبة</option><option value="role_remove">سحب رتبة</option></select><button class="primary-button" type="submit">إضافة اختصار</button></form><div id="shortcutList" class="quick-list"></div></section>
+      </div>
+      <section class="panel setup-panel reveal" id="settings"><div><p class="eyebrow">BOT SETTINGS</p><h2>إعدادات البوت</h2><p>عدّل حالة البوت والأوامر من الموقع لكل سيرفر.</p></div><div><input id="activityText" placeholder="النشاط الظاهر للبوت"><select id="activityType"><option value="Watching">يشاهد</option><option value="Playing">يلعب</option><option value="Listening">يستمع إلى</option><option value="Competing">يتنافس في</option></select><div class="command-settings" id="commandSettings"><small>سجّل الدخول لاختيار السيرفر وتعديل الأوامر.</small></div></div><button class="primary-button" id="saveSettings">حفظ إعدادات البوت <span>←</span></button></section>
+      <footer><span>© 2026 Lumera Bot</span><span>مصمم للمجتمعات التي تكبر</span><span class="footer-links">الحالة <i></i> · الدعم · سياسة الخصوصية</span></footer>
+    </main>
+  </div>
+  <dialog id="authDialog">
+    <form method="dialog" class="auth-card" id="authForm">
+      <button class="auth-close" value="cancel" aria-label="إغلاق">×</button>
+      <p class="eyebrow">LUMERA ACCOUNT</p>
+      <h2 id="authTitle">تسجيل الدخول</h2>
+      <input id="accountUsername" name="username" placeholder="اسم الحساب" minlength="3" maxlength="24" required>
+      <input id="accountPassword" name="password" type="password" placeholder="كلمة المرور" minlength="8" required>
+      <button class="primary-button" id="authSubmit" value="default">دخول</button>
+      <button class="text-button" id="authToggle" type="button">إنشاء حساب جديد</button>
+      <small id="authError" role="alert"></small>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
