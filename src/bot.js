@@ -1,7 +1,9 @@
 import 'dotenv/config';
+import { randomInt } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Client, EmbedBuilder, Events, GatewayIntentBits, PermissionFlagsBits, REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } from 'discord.js';
 
 const token = process.env.DISCORD_TOKEN;
 const clientId = process.env.DISCORD_CLIENT_ID;
@@ -11,11 +13,17 @@ const inviteTrackingEnabled = process.env.ENABLE_INVITE_TRACKING === 'true';
 const configPath = join(process.cwd(), 'data/config.json');
 let config = { guilds: {} };
 const inviteCache = new Map();
+const cooldowns = new Map();
+const spamTracker = new Map();
 const saveConfig = () => writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 const loadConfig = async () => {
   try { config = JSON.parse(await readFile(configPath, 'utf8')); } catch { config = { guilds: {} }; }
 };
 const shortcutCommands = [
+  { name: 'say', value: 'say' },
+  { name: 'announce', value: 'announce' },
+  { name: 'embed', value: 'embed' },
+  { name: 'serverstats', value: 'serverstats' },
   { name: 'invite', value: 'invite' },
   { name: 'clear', value: 'clear' },
   { name: 'kick', value: 'kick' },
@@ -30,6 +38,10 @@ const shortcutCommands = [
   { name: 'role remove', value: 'role_remove' },
 ];
 const requiredPermissions = {
+  say: PermissionFlagsBits.ManageMessages,
+  announce: PermissionFlagsBits.ManageMessages,
+  embed: PermissionFlagsBits.ManageMessages,
+  serverstats: PermissionFlagsBits.ManageGuild,
   invite: null,
   clear: PermissionFlagsBits.ManageMessages,
   kick: PermissionFlagsBits.KickMembers,
@@ -52,6 +64,10 @@ const applyGuildSettings = (guild) => {
 };
 const shortcutUsage = (name, command) => ({
   invite: `استخدم: !${name}`,
+  say: `استخدم: !${name} النص`,
+  announce: `استخدم: !${name} النص`,
+  embed: `استخدم: !${name} النص`,
+  serverstats: `استخدم: !${name}`,
   clear: `استخدم: !${name} العدد`,
   kick: `استخدم: !${name} @العضو السبب`,
   ban: `استخدم: !${name} @العضو السبب`,
@@ -65,6 +81,42 @@ const shortcutUsage = (name, command) => ({
   role_remove: `استخدم: !${name} @العضو @الرتبة`,
 }[command] || `استخدم: !${name}`);
 const canKickMember = (member, guild) => !member.permissions.has(PermissionFlagsBits.Administrator) && member.id !== guild.ownerId;
+const getGuildData = (guildId) => {
+  config.guilds[guildId] ||= { shortcuts: {}, settings: {}, users: {}, logs: {} };
+  return config.guilds[guildId];
+};
+const getUserData = (guildId, userId) => {
+  const guild = getGuildData(guildId);
+  guild.users[userId] ||= { xp: 0, coins: 0, streak: 0, lastDaily: null, quest: { date: null, progress: 0, claimed: false }, achievements: [], title: '', activity: 0, mysteryClaimedAt: null };
+  return guild.users[userId];
+};
+const levelForXp = (xp) => Math.floor(xp / 100) + 1;
+const checkAchievements = (user) => {
+  const unlocked = [];
+  const achievements = [['first-xp', '🌱 بداية الطريق', user.xp >= 5], ['level-10', '⭐ مستوى 10', levelForXp(user.xp) >= 10], ['rich', '💰 أول 1000 Coins', user.coins >= 1000]];
+  for (const [id, title, condition] of achievements) if (condition && !user.achievements.includes(id)) { user.achievements.push(id); unlocked.push(title); }
+  return unlocked;
+};
+const onCooldown = (key, milliseconds) => {
+  const previous = cooldowns.get(key) || 0;
+  if (Date.now() - previous < milliseconds) return true;
+  cooldowns.set(key, Date.now());
+  return false;
+};
+const shopItems = [
+  { name: 'حزمة XP', value: 'xp', price: 500 },
+  { name: 'لقب Active', value: 'active', price: 750 },
+  { name: 'حزمة Coins', value: 'coins', price: 900 },
+  { name: 'لقب Veteran', value: 'veteran', price: 1200 },
+  { name: 'Mystery Box', value: 'mystery', price: 1000 },
+];
+const lumeraEmbed = (title, description, color = 0x3568e5) => new EmbedBuilder().setColor(color).setTitle(title).setDescription(description).setTimestamp();
+const logAction = async (guild, type, title, fields) => {
+  const channelId = getGuildData(guild.id).logs?.[type];
+  if (!channelId) return;
+  const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
+  if (channel?.isTextBased()) await channel.send({ embeds: [lumeraEmbed(title, '', 0x758090).addFields(fields)] }).catch(() => {});
+};
 
 if (!token || !clientId) {
   console.error('Missing DISCORD_TOKEN or DISCORD_CLIENT_ID in .env');
@@ -74,6 +126,7 @@ if (!token || !clientId) {
   process.exitCode = 1;
 } else {
   const commands = [
+    new SlashCommandBuilder().setName('help').setDescription('عرض مركز مساعدة Lumera'),
     new SlashCommandBuilder().setName('ping').setDescription('عرض سرعة استجابة البوت'),
     new SlashCommandBuilder().setName('server').setDescription('عرض معلومات السيرفر'),
     new SlashCommandBuilder().setName('invite').setDescription('عرض إحصاءات الدعوات الخاصة بك'),
@@ -117,6 +170,35 @@ if (!token || !clientId) {
       .addSubcommand((command) => command.setName('add').setDescription('إعطاء رتبة لعضو').addUserOption((option) => option.setName('user').setDescription('العضو').setRequired(true)).addRoleOption((option) => option.setName('role').setDescription('الرتبة').setRequired(true)))
       .addSubcommand((command) => command.setName('remove').setDescription('سحب رتبة من عضو').addUserOption((option) => option.setName('user').setDescription('العضو').setRequired(true)).addRoleOption((option) => option.setName('role').setDescription('الرتبة').setRequired(true)))
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    new SlashCommandBuilder().setName('profile').setDescription('عرض ملفك في Lumera'),
+    new SlashCommandBuilder().setName('balance').setDescription('عرض رصيدك من Lumera Coins'),
+    new SlashCommandBuilder().setName('daily').setDescription('استلام المكافأة اليومية'),
+    new SlashCommandBuilder().setName('quest').setDescription('عرض مهمتك اليومية'),
+    new SlashCommandBuilder().setName('leaderboard').setDescription('عرض المتصدرين').addStringOption((option) => option.setName('type').setDescription('نوع الترتيب').addChoices({ name: 'XP', value: 'xp' }, { name: 'Coins', value: 'coins' }, { name: 'Streak', value: 'streak' })),
+    new SlashCommandBuilder().setName('pay').setDescription('تحويل Coins لعضو').addUserOption((option) => option.setName('user').setDescription('المستلم').setRequired(true)).addIntegerOption((option) => option.setName('amount').setDescription('المبلغ').setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName('shop').setDescription('متجر Lumera').addSubcommand((command) => command.setName('list').setDescription('عرض المتجر')).addSubcommand((command) => command.setName('buy').setDescription('شراء عنصر').addStringOption((option) => option.setName('item').setDescription('العنصر').addChoices(...shopItems.map(({ name, value }) => ({ name, value }))).setRequired(true))),
+    new SlashCommandBuilder().setName('coinflip').setDescription('لعبة العملة').addIntegerOption((option) => option.setName('amount').setDescription('المبلغ').setMinValue(1).setRequired(true)),
+    new SlashCommandBuilder().setName('rps').setDescription('حجر ورق مقص').addStringOption((option) => option.setName('choice').setDescription('اختيارك').addChoices({ name: 'حجر', value: 'rock' }, { name: 'ورق', value: 'paper' }, { name: 'مقص', value: 'scissors' }).setRequired(true)),
+    new SlashCommandBuilder().setName('guess').setDescription('خمن الرقم من 1 إلى 5').addIntegerOption((option) => option.setName('number').setDescription('تخمينك').setMinValue(1).setMaxValue(5).setRequired(true)),
+    new SlashCommandBuilder().setName('achievement').setDescription('عرض إنجازاتك'),
+    new SlashCommandBuilder().setName('title').setDescription('اختيار لقب').addStringOption((option) => option.setName('name').setDescription('اللقب').setRequired(true)),
+    new SlashCommandBuilder().setName('mystery').setDescription('فتح Mystery Reward واحدة'),
+    new SlashCommandBuilder().setName('redeem').setDescription('استخدام كود مكافأة').addStringOption((option) => option.setName('code').setDescription('الكود').setRequired(true)),
+    new SlashCommandBuilder().setName('redeem-create').setDescription('إنشاء كود مكافأة').addStringOption((option) => option.setName('code').setDescription('الكود').setRequired(true)).addIntegerOption((option) => option.setName('coins').setDescription('Coins').setMinValue(0).setRequired(true)).addIntegerOption((option) => option.setName('uses').setDescription('عدد الاستخدامات').setMinValue(1).setMaxValue(10000).setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('level-role').setDescription('ربط رتبة بمستوى').addSubcommand((command) => command.setName('add').setDescription('إضافة رتبة مستوى').addIntegerOption((option) => option.setName('level').setDescription('المستوى').setMinValue(1).setRequired(true)).addRoleOption((option) => option.setName('role').setDescription('الرتبة').setRequired(true))).addSubcommand((command) => command.setName('remove').setDescription('حذف الربط').addIntegerOption((option) => option.setName('level').setDescription('المستوى').setMinValue(1).setRequired(true))).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    new SlashCommandBuilder().setName('event').setDescription('إدارة الفعاليات').addSubcommand((command) => command.setName('create').setDescription('إنشاء فعالية').addStringOption((option) => option.setName('name').setDescription('الاسم').setRequired(true)).addStringOption((option) => option.setName('description').setDescription('الوصف').setRequired(true)).addIntegerOption((option) => option.setName('minutes').setDescription('مدة التسجيل بالدقائق').setMinValue(1).setMaxValue(10080).setRequired(true))).addSubcommand((command) => command.setName('list').setDescription('عرض الفعاليات')).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('welcome').setDescription('إعداد رسالة الترحيب').addStringOption((option) => option.setName('channel').setDescription('معرف الروم').setRequired(true)).addStringOption((option) => option.setName('message').setDescription('الرسالة واستخدم {user} و {server}').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('challenge').setDescription('إدارة التحديات').addSubcommand((command) => command.setName('create').setDescription('إنشاء تحدي XP').addStringOption((option) => option.setName('name').setDescription('اسم التحدي').setRequired(true)).addIntegerOption((option) => option.setName('minutes').setDescription('المدة بالدقائق').setMinValue(1).setMaxValue(10080).setRequired(true))).addSubcommand((command) => command.setName('leaderboard').setDescription('ترتيب التحدي')).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('season').setDescription('تفعيل موسم').addStringOption((option) => option.setName('name').setDescription('اسم الموسم').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('custom-reply').setDescription('إضافة رد تلقائي').addStringOption((option) => option.setName('trigger').setDescription('الكلمة المحفزة').setRequired(true).setMaxLength(40)).addStringOption((option) => option.setName('response').setDescription('الرد').setRequired(true).setMaxLength(1000)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('automod').setDescription('إعداد الحماية').addBooleanOption((option) => option.setName('links').setDescription('منع الروابط')).addBooleanOption((option) => option.setName('caps').setDescription('منع الأحرف الكبيرة')).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('say').setDescription('إرسال رسالة باسم البوت').addStringOption((option) => option.setName('text').setDescription('النص').setRequired(true).setMaxLength(2000)).setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('announce').setDescription('إرسال إعلان منسق').addStringOption((option) => option.setName('title').setDescription('العنوان').setRequired(true).setMaxLength(256)).addStringOption((option) => option.setName('text').setDescription('المحتوى').setRequired(true).setMaxLength(4000)).addStringOption((option) => option.setName('image').setDescription('رابط صورة اختياري')).setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('embed').setDescription('إرسال Embed مخصص').addStringOption((option) => option.setName('title').setDescription('العنوان').setRequired(true).setMaxLength(256)).addStringOption((option) => option.setName('description').setDescription('الوصف').setRequired(true).setMaxLength(4000)).addStringOption((option) => option.setName('color').setDescription('لون HEX مثل #3568e5')).setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
+    new SlashCommandBuilder().setName('serverstats').setDescription('عرض إحصاءات السيرفر').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('suggest').setDescription('إرسال اقتراح').addStringOption((option) => option.setName('text').setDescription('الاقتراح').setRequired(true).setMaxLength(1000)),
+    new SlashCommandBuilder().setName('create-role').setDescription('إنشاء رتبة Lumera عشوائية').setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    new SlashCommandBuilder().setName('setup-logs').setDescription('إنشاء قنوات اللوق').setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   ].map((command) => command.toJSON());
 
   const rest = new REST({ version: '10' }).setToken(token);
@@ -145,8 +227,271 @@ if (!token || !clientId) {
 
   client.on(Events.InteractionCreate, async (interaction) => {
     try {
+      if (interaction.isButton() && interaction.customId.startsWith('suggest:')) {
+        const [, action, suggestionId] = interaction.customId.split(':');
+        const guild = getGuildData(interaction.guild.id);
+        const suggestion = guild.suggestions?.[suggestionId];
+        if (!suggestion) return interaction.reply({ content: 'هذا الاقتراح غير موجود.', ephemeral: true });
+        suggestion.voters ||= {};
+        if (suggestion.voters[interaction.user.id]) return interaction.reply({ content: 'صوّت لهذا الاقتراح مسبقًا.', ephemeral: true });
+        suggestion.voters[interaction.user.id] = action;
+        suggestion[action === 'up' ? 'upvotes' : 'downvotes'] += 1;
+        await saveConfig();
+        return interaction.update({ embeds: [lumeraEmbed('💡 اقتراح Lumera', `${suggestion.text}\n\nالحالة: 🟡 قيد المراجعة`, 0xf2b84b).addFields({ name: 'صاحب الاقتراح', value: `<@${suggestion.authorId}>`, inline: true }, { name: '👍 مؤيد', value: String(suggestion.upvotes), inline: true }, { name: '👎 معارض', value: String(suggestion.downvotes), inline: true })], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`suggest:up:${suggestionId}`).setLabel(`👍 ${suggestion.upvotes}`).setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`suggest:down:${suggestionId}`).setLabel(`👎 ${suggestion.downvotes}`).setStyle(ButtonStyle.Danger))] });
+      }
+      if (interaction.isButton() && interaction.customId.startsWith('event:join:')) {
+        const eventId = interaction.customId.slice('event:join:'.length);
+        const event = getGuildData(interaction.guild.id).events?.[eventId];
+        if (!event || Date.now() > event.endsAt) return interaction.reply({ content: 'انتهت الفعالية.', ephemeral: true });
+        event.participants ||= [];
+        if (!event.participants.includes(interaction.user.id)) event.participants.push(interaction.user.id);
+        await saveConfig();
+        return interaction.reply({ content: `تم تسجيلك في فعالية ${event.name}.`, ephemeral: true });
+      }
       if (interaction.isChatInputCommand()) {
         if (!commandEnabled(interaction.guild.id, interaction.commandName) && interaction.commandName !== 'shortcut') return;
+        const guildData = getGuildData(interaction.guild.id);
+        logAction(interaction.guild, 'command', '⚡ استخدام أمر', [{ name: 'المستخدم', value: `${interaction.user.tag} (${interaction.user.id})` }, { name: 'الأمر', value: `/${interaction.commandName}` }, { name: 'الروم', value: `<#${interaction.channelId}>` }]);
+        if (interaction.commandName === 'help') return interaction.reply({ embeds: [lumeraEmbed('✨ مركز Lumera', 'كل أنظمة السيرفر في مكان واحد.').addFields({ name: '🛡️ الإدارة', value: '`/clear` `/kick` `/ban` `/timeout` `/lock` `/role` `/say` `/announce` `/embed`' }, { name: '⭐ المجتمع', value: '`/profile` `/balance` `/daily` `/quest` `/leaderboard` `/achievement` `/title` `/mystery`' }, { name: '💰 الاقتصاد والألعاب', value: '`/pay` `/shop` `/coinflip` `/rps` `/guess` `/redeem`' }, { name: '🎪 الفعاليات', value: '`/event create` `/event list` `/challenge` `/season`' }, { name: '⚙️ النظام', value: '`/shortcut` `/setup-logs` `/create-role` `/welcome` `/custom-reply` `/automod` `/serverstats`' })] });
+        if (interaction.commandName === 'profile' || interaction.commandName === 'balance') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          return interaction.reply({ embeds: [lumeraEmbed(`👤 ${interaction.user.globalName || interaction.user.username}`, `مستوى **${levelForXp(user.xp)}**\nXP: **${user.xp}**\nCoins: **${user.coins}**\nStreak: **${user.streak}**\nاللقب: **${user.title || 'بدون لقب'}**\nالإنجازات: **${user.achievements.length}**`, 0x8f79e8).setThumbnail(interaction.user.displayAvatarURL({ size: 256 }))] });
+        }
+        if (interaction.commandName === 'daily') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const today = new Date().toISOString().slice(0, 10);
+          if (user.lastDaily === today) return interaction.reply({ content: 'استلمت مكافأتك اليومية بالفعل.', ephemeral: true });
+          user.lastDaily = today;
+          user.streak += 1;
+          user.coins += 100 + Math.min(user.streak * 10, 200);
+          user.xp += 25;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('🎁 مكافأة يومية', `حصلت على **${100 + Math.min(user.streak * 10, 200)} Coins** و **25 XP**.\n🔥 Streak: **${user.streak}**`, 0xf2b84b)] });
+        }
+        if (interaction.commandName === 'quest') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const today = new Date().toISOString().slice(0, 10);
+          if (user.quest.date !== today) user.quest = { date: today, progress: 0, claimed: false };
+          if (user.quest.progress >= 30 && !user.quest.claimed) {
+            user.quest.claimed = true;
+            user.xp += 100;
+            user.coins += 50;
+            await saveConfig();
+            return interaction.reply({ embeds: [lumeraEmbed('🎉 اكتملت المهمة', '+100 XP و +50 Coins', 0x55b6a8)] });
+          }
+          return interaction.reply({ embeds: [lumeraEmbed('🎯 مهمة اليوم', `أرسل 30 رسالة\nالتقدم: **${user.quest.progress} / 30**\nالمكافأة: **150 XP + 75 Coins**`, 0x3568e5)] });
+        }
+        if (interaction.commandName === 'leaderboard') {
+          const type = interaction.options.getString('type') || 'xp';
+          const users = Object.entries(guildData.users || {}).sort(([, left], [, right]) => (right[type] || 0) - (left[type] || 0)).slice(0, 10);
+          const labels = { xp: 'XP', coins: 'Coins', streak: 'Streak' };
+          return interaction.reply({ embeds: [lumeraEmbed(`🏆 المتصدرون: ${labels[type]}`, users.map(([id, user], index) => `${index + 1}. <@${id}> — **${user[type] || 0}**`).join('\n') || 'لا توجد بيانات بعد.', 0xf2b84b)] });
+        }
+        if (interaction.commandName === 'pay') {
+          const recipient = interaction.options.getUser('user');
+          const amount = interaction.options.getInteger('amount');
+          const sender = getUserData(interaction.guild.id, interaction.user.id);
+          if (recipient.bot || recipient.id === interaction.user.id || sender.coins < amount) return interaction.reply({ content: 'التحويل غير ممكن. تحقق من العضو ورصيدك.', ephemeral: true });
+          sender.coins -= amount;
+          getUserData(interaction.guild.id, recipient.id).coins += amount;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('💸 تم التحويل', `تم تحويل **${amount} Coins** إلى ${recipient}.`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'shop') {
+          const item = interaction.options.getString('item');
+          if (interaction.options.getSubcommand() === 'list') return interaction.reply({ embeds: [lumeraEmbed('🛍️ متجر Lumera', shopItems.map(({ name, price }) => `${name} — ${price} Coins`).join('\n'), 0x8f79e8)] });
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const prices = Object.fromEntries(shopItems.map(({ value, price }) => [value, price]));
+          if (!prices[item] || user.coins < prices[item] || (['active', 'veteran'].includes(item) && user.title.toLowerCase() === item)) return interaction.reply({ content: 'رصيدك غير كافٍ أو تملك هذا العنصر مسبقًا.', ephemeral: true });
+          user.coins -= prices[item];
+          if (item === 'xp') user.xp += 250;
+          if (item === 'coins') user.coins += 600;
+          if (item === 'active' || item === 'veteran') user.title = item[0].toUpperCase() + item.slice(1);
+          if (item === 'mystery') user.mysteryClaimedAt = null;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('✅ تمت عملية الشراء', item === 'xp' ? 'حصلت على **250 XP**.' : 'حصلت على لقب **Active**.', 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'coinflip') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const amount = interaction.options.getInteger('amount');
+          if (user.coins < amount || onCooldown(`coinflip:${interaction.guild.id}:${interaction.user.id}`, 10000)) return interaction.reply({ content: 'رصيدك غير كافٍ أو انتظر قليلًا قبل المحاولة التالية.', ephemeral: true });
+          const won = randomInt(2) === 1;
+          if (won) user.coins += amount; else user.coins -= amount;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed(won ? '🪙 ربحت!' : '🪙 خسرت', `${won ? '+' : '-'}${amount} Coins\nرصيدك: **${user.coins}**`, won ? 0x55b6a8 : 0xe05d5d)] });
+        }
+        if (interaction.commandName === 'rps' || interaction.commandName === 'guess') {
+          if (onCooldown(`${interaction.commandName}:${interaction.guild.id}:${interaction.user.id}`, 15000)) return interaction.reply({ content: 'انتظر قليلًا قبل لعب اللعبة مرة أخرى.', ephemeral: true });
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const result = interaction.commandName === 'rps' ? (() => {
+            const botChoice = ['rock', 'paper', 'scissors'][randomInt(3)];
+            const playerChoice = interaction.options.getString('choice');
+            const won = (playerChoice === 'rock' && botChoice === 'scissors') || (playerChoice === 'paper' && botChoice === 'rock') || (playerChoice === 'scissors' && botChoice === 'paper');
+            return { won, draw: playerChoice === botChoice, botChoice };
+          })() : { won: randomInt(5) + 1 === interaction.options.getInteger('number'), draw: false, botChoice: null };
+          const won = result.won;
+          if (result.draw) return interaction.reply({ embeds: [lumeraEmbed('🤝 تعادل', `اختيار البوت: **${result.botChoice}**`, 0xf2b84b)] });
+          if (won) { user.coins += 40; user.xp += 15; }
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed(won ? '🎉 فزت!' : '🎲 حظًا أوفر', won ? '+40 Coins و +15 XP' : 'لم تفز هذه المرة.', won ? 0x55b6a8 : 0xe05d5d)] });
+        }
+        if (interaction.commandName === 'achievement') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const labels = { 'first-xp': '🌱 بداية الطريق', 'level-10': '⭐ مستوى 10', rich: '💰 أول 1000 Coins' };
+          return interaction.reply({ embeds: [lumeraEmbed('🏆 إنجازاتك', user.achievements.map((id) => labels[id] || id).join('\n') || 'لم تفتح أي إنجاز بعد.', 0xf2b84b)] });
+        }
+        if (interaction.commandName === 'title') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const titles = { Veteran: 'level-10', Active: 'first-xp', 'Lumera Legend': 'rich' };
+          const name = interaction.options.getString('name');
+          if (!titles[name] || !user.achievements.includes(titles[name])) return interaction.reply({ content: 'هذا اللقب غير متاح لك بعد.', ephemeral: true });
+          user.title = name;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('👑 تم اختيار اللقب', `لقبك الآن: **${name}**`, 0x8f79e8)] });
+        }
+        if (interaction.commandName === 'mystery') {
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          const today = new Date().toISOString().slice(0, 10);
+          if (user.mysteryClaimedAt === today) return interaction.reply({ content: 'فتحت Mystery Reward اليوم. عد غدًا.', ephemeral: true });
+          user.mysteryClaimedAt = today;
+          const rewardType = randomInt(3);
+          const reward = rewardType === 0 ? { text: '+250 XP', apply: () => { user.xp += 250; } } : rewardType === 1 ? { text: '+300 Coins', apply: () => { user.coins += 300; } } : { text: 'لقب Active', apply: () => { if (!user.achievements.includes('first-xp')) user.achievements.push('first-xp'); user.title = 'Active'; } };
+          reward.apply();
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('📦 Mystery Reward', `حصلت على: **${reward.text}**`, 0xf2b84b)] });
+        }
+        if (interaction.commandName === 'redeem') {
+          const code = interaction.options.getString('code').toUpperCase();
+          const reward = guildData.redeemCodes?.[code];
+          const user = getUserData(interaction.guild.id, interaction.user.id);
+          if (!reward || reward.expiresAt < Date.now() || reward.uses <= 0 || reward.claimed?.includes(interaction.user.id)) return interaction.reply({ content: 'الكود غير صالح أو منتهي.', ephemeral: true });
+          reward.uses -= 1;
+          reward.claimed ||= [];
+          reward.claimed.push(interaction.user.id);
+          user.coins += reward.coins;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('🎁 تم استرداد الكود', `حصلت على **${reward.coins} Coins**.`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'redeem-create') {
+          const code = interaction.options.getString('code').toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+          const guild = getGuildData(interaction.guild.id);
+          guild.redeemCodes ||= {};
+          guild.redeemCodes[code] = { coins: interaction.options.getInteger('coins'), uses: interaction.options.getInteger('uses'), expiresAt: Date.now() + 30 * 86400000, claimed: [] };
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('🎟️ تم إنشاء الكود', `الكود: **${code}**\nينتهي خلال 30 يومًا.`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'level-role') {
+          const guild = getGuildData(interaction.guild.id);
+          guild.levelRoles ||= {};
+          const level = interaction.options.getInteger('level');
+          if (interaction.options.getSubcommand() === 'remove') delete guild.levelRoles[level];
+          else guild.levelRoles[level] = interaction.options.getRole('role').id;
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('⭐ تم تحديث رتب المستويات', 'تم حفظ إعدادات الرتب.', 0x8f79e8)] });
+        }
+        if (interaction.commandName === 'event') {
+          const guild = getGuildData(interaction.guild.id);
+          guild.events ||= {};
+          if (interaction.options.getSubcommand() === 'list') {
+            const events = Object.values(guild.events).filter((event) => event.endsAt > Date.now()).map((event) => `🎪 **${event.name}** — ${event.participants?.length || 0} مشارك`).join('\n');
+            return interaction.reply({ embeds: [lumeraEmbed('🎪 الفعاليات الحالية', events || 'لا توجد فعاليات.', 0x55b6a8)] });
+          }
+          const id = `${Date.now()}-${interaction.user.id}`;
+          const event = { name: interaction.options.getString('name'), description: interaction.options.getString('description'), endsAt: Date.now() + interaction.options.getInteger('minutes') * 60000, participants: [] };
+          guild.events[id] = event;
+          await saveConfig();
+          const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`event:join:${id}`).setLabel('تسجيل المشاركة').setStyle(ButtonStyle.Success));
+          return interaction.reply({ embeds: [lumeraEmbed(`🎪 ${event.name}`, event.description, 0x55b6a8)], components: [row] });
+        }
+        if (interaction.commandName === 'welcome') {
+          const guild = getGuildData(interaction.guild.id);
+          guild.settings.welcome = { channelId: interaction.options.getString('channel'), message: interaction.options.getString('message') };
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('👋 تم إعداد الترحيب', 'سيتم استخدام الرسالة عند دخول عضو جديد.', 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'challenge') {
+          if (interaction.options.getSubcommand() === 'leaderboard') {
+            const challenge = guildData.challenge;
+            const rows = Object.entries(challenge?.scores || {}).sort(([, left], [, right]) => right - left).slice(0, 10).map(([id, score], index) => `${index + 1}. <@${id}> — **${score} XP**`).join('\n');
+            return interaction.reply({ embeds: [lumeraEmbed('🏆 ترتيب التحدي', rows || 'لا توجد مشاركات بعد.', 0xf2b84b)] });
+          }
+          guildData.challenge = { name: interaction.options.getString('name'), endsAt: Date.now() + interaction.options.getInteger('minutes') * 60000, scores: {} };
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('⚔️ بدأ التحدي', `**${guildData.challenge.name}**\nاجمع أكبر عدد من XP قبل انتهاء الوقت.`, 0xf2b84b)] });
+        }
+        if (interaction.commandName === 'season') {
+          guildData.season = { name: interaction.options.getString('name'), startedAt: new Date().toISOString() };
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('🌟 موسم جديد', `تم تفعيل **${guildData.season.name}**.`, 0x8f79e8)] });
+        }
+        if (interaction.commandName === 'custom-reply') {
+          guildData.replies ||= {};
+          guildData.replies[interaction.options.getString('trigger').toLowerCase()] = interaction.options.getString('response');
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('💬 تم حفظ الرد التلقائي', `سيتم الرد عند كتابة: **${interaction.options.getString('trigger')}**`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'automod') {
+          guildData.automod = { links: interaction.options.getBoolean('links') ?? guildData.automod?.links ?? false, caps: interaction.options.getBoolean('caps') ?? guildData.automod?.caps ?? false };
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('🛡️ تم تحديث الحماية', `الروابط: ${guildData.automod.links ? 'ممنوعة' : 'مسموحة'}\nالأحرف الكبيرة: ${guildData.automod.caps ? 'ممنوعة' : 'مسموحة'}`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'say') {
+          await interaction.channel.send(interaction.options.getString('text'));
+          return interaction.reply({ content: 'تم إرسال الرسالة.', ephemeral: true });
+        }
+        if (interaction.commandName === 'announce') {
+          const announcement = lumeraEmbed(interaction.options.getString('title'), interaction.options.getString('text'), 0x3568e5).setAuthor({ name: interaction.user.globalName || interaction.user.username, iconURL: interaction.user.displayAvatarURL() });
+          const image = interaction.options.getString('image');
+          if (image) announcement.setImage(image);
+          await interaction.channel.send({ embeds: [announcement] });
+          return interaction.reply({ content: 'تم نشر الإعلان.', ephemeral: true });
+        }
+        if (interaction.commandName === 'embed') {
+          const color = interaction.options.getString('color') || '#3568e5';
+          if (!/^#?[0-9a-f]{6}$/i.test(color)) return interaction.reply({ content: 'لون HEX غير صحيح.', ephemeral: true });
+          await interaction.channel.send({ embeds: [lumeraEmbed(interaction.options.getString('title'), interaction.options.getString('description'), Number.parseInt(color.replace('#', ''), 16))] });
+          return interaction.reply({ content: 'تم نشر الـEmbed.', ephemeral: true });
+        }
+        if (interaction.commandName === 'serverstats') {
+          const guild = getGuildData(interaction.guild.id);
+          const users = Object.values(guild.users || {});
+          const totalXp = users.reduce((sum, user) => sum + user.xp, 0);
+          const totalCoins = users.reduce((sum, user) => sum + user.coins, 0);
+          return interaction.reply({ embeds: [lumeraEmbed('📊 إحصاءات السيرفر', `الأعضاء: **${interaction.guild.memberCount}**\nالقنوات: **${interaction.guild.channels.cache.size}**\nمستخدمو النظام: **${users.length}**\nإجمالي XP: **${totalXp}**\nإجمالي Coins: **${totalCoins}**`, 0x55b6a8)] });
+        }
+        if (interaction.commandName === 'suggest') {
+          guildData.suggestions ||= {};
+          const id = `${Date.now()}-${interaction.user.id}`;
+          guildData.suggestions[id] = { authorId: interaction.user.id, text: interaction.options.getString('text'), upvotes: 0, downvotes: 0, voters: {} };
+          await saveConfig();
+          const suggestion = guildData.suggestions[id];
+          const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`suggest:up:${id}`).setLabel('👍 0').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`suggest:down:${id}`).setLabel('👎 0').setStyle(ButtonStyle.Danger));
+          await interaction.reply({ embeds: [lumeraEmbed('💡 اقتراح Lumera', suggestion.text, 0xf2b84b).addFields({ name: 'صاحب الاقتراح', value: `<@${interaction.user.id}>`, inline: true }, { name: 'الحالة', value: '🟡 قيد المراجعة', inline: true })], components: [row] });
+          return logAction(interaction.guild, 'suggestion', 'اقتراح جديد', [{ name: 'المستخدم', value: interaction.user.tag }, { name: 'النص', value: suggestion.text.slice(0, 1024) }]);
+        }
+        if (interaction.commandName === 'create-role') {
+          const names = ['Lumera Elite', 'Lumera Guardian', 'Lumera Star', 'Lumera Prime'];
+          const colors = [0x3568e5, 0x55b6a8, 0xf29b4b, 0x8f79e8];
+          const index = randomInt(names.length);
+          const baseName = names[index];
+          const duplicateCount = interaction.guild.roles.cache.filter((role) => role.name === baseName || role.name.startsWith(`${baseName} `)).size;
+          const role = await interaction.guild.roles.create({ name: duplicateCount ? `${baseName} ${duplicateCount + 1}` : baseName, colors: { primaryColor: colors[index] }, reason: `Created by ${interaction.user.tag}` });
+          return interaction.reply({ embeds: [lumeraEmbed('🎭 تم إنشاء رتبة', `تم إنشاء ${role} بأمان بدون صلاحيات إدارية.`, colors[index]) ] });
+        }
+        if (interaction.commandName === 'setup-logs') {
+          const logTypes = ['command', 'mod', 'role', 'security', 'member', 'message', 'suggestion', 'economy', 'quest', 'system'];
+          const categoryName = '📋・LUMERA LOGS';
+          let category = interaction.guild.channels.cache.find((channel) => channel.type === ChannelType.GuildCategory && channel.name === categoryName);
+          if (!category) category = await interaction.guild.channels.create({ name: categoryName, type: ChannelType.GuildCategory, permissionOverwrites: [{ id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }] });
+          guildData.logs ||= {};
+          for (const type of logTypes) {
+            let channel = interaction.guild.channels.cache.find((item) => item.parentId === category.id && item.name === `${type}-logs`);
+            if (!channel) channel = await interaction.guild.channels.create({ name: `${type}-logs`, type: ChannelType.GuildText, parent: category.id, permissionOverwrites: [{ id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] }] });
+            guildData.logs[type] = channel.id;
+          }
+          await saveConfig();
+          return interaction.reply({ embeds: [lumeraEmbed('📋 تم إعداد اللوق', `تم تجهيز **${logTypes.length}** قنوات بدون تكرار.`, 0x55b6a8)] });
+        }
         if (interaction.commandName === 'ping') return interaction.reply(`🏓 ${client.ws.ping}ms`);
         if (interaction.commandName === 'server') return interaction.reply(`السيرفر: ${interaction.guild.name}\nالأعضاء: ${interaction.guild.memberCount}`);
         if (interaction.commandName === 'invite') {
@@ -291,11 +636,37 @@ if (!token || !clientId) {
 
   client.on(Events.MessageCreate, async (message) => {
     if (!textShortcutsEnabled) return;
-    if (message.author.bot || !message.guild || !message.content.startsWith('!')) return;
+    if (message.author.bot || !message.guild) return;
+    const guildData = getGuildData(message.guild.id);
+    const automod = guildData.automod || {};
+    const recentMessages = spamTracker.get(`${message.guild.id}:${message.author.id}`) || [];
+    const now = Date.now();
+    recentMessages.push(now);
+    spamTracker.set(`${message.guild.id}:${message.author.id}`, recentMessages.filter((time) => now - time < 10000));
+    if (automod.links && /https?:\/\/|discord\.gg\//i.test(message.content)) return message.delete().catch(() => {});
+    if (automod.caps && message.content.length > 12 && message.content === message.content.toUpperCase() && message.content !== message.content.toLowerCase()) return message.delete().catch(() => {});
+    if (recentMessages.length >= 6) return message.delete().catch(() => {});
+    const customResponse = Object.entries(guildData.replies || {}).find(([trigger]) => message.content.toLowerCase().includes(trigger))?.[1];
+    if (customResponse) await message.reply(customResponse).catch(() => {});
+    const user = getUserData(message.guild.id, message.author.id);
+    const today = new Date().toISOString().slice(0, 10);
+    if (user.quest.date !== today) user.quest = { date: today, progress: 0, claimed: false };
+    if (!onCooldown(`xp:${message.guild.id}:${message.author.id}`, 60000)) {
+      user.xp += 5;
+      if (user.quest.progress < 30) user.quest.progress += 1;
+      if (guildData.challenge?.endsAt > Date.now()) {
+        guildData.challenge.scores[message.author.id] = (guildData.challenge.scores[message.author.id] || 0) + 5;
+      }
+      await saveConfig();
+      const levelRoleId = Object.entries(getGuildData(message.guild.id).levelRoles || {}).filter(([level]) => Number(level) <= levelForXp(user.xp)).sort(([left], [right]) => Number(right) - Number(left))[0]?.[1];
+      if (levelRoleId && !message.member.roles.cache.has(levelRoleId)) await message.member.roles.add(levelRoleId).catch(() => {});
+    }
+    if (!message.content.startsWith('!')) return;
     const [shortcutName, ...argumentsList] = message.content.slice(1).trim().split(/\s+/);
     if (!shortcutName) return;
     const command = config.guilds[message.guild.id]?.shortcuts?.[shortcutName.toLowerCase()];
     if (!command) return;
+    if (!commandEnabled(message.guild.id, command)) return;
     const requiredPermission = requiredPermissions[command];
     if (requiredPermission && !message.member.permissions.has(requiredPermission)) return;
     try {
@@ -320,6 +691,12 @@ if (!token || !clientId) {
         if (!Number.isInteger(seconds) || seconds < 0 || seconds > 21600) return message.reply(shortcutUsage(shortcutName, command));
         await message.channel.setRateLimitPerUser(seconds);
         return message.reply(seconds ? `تم تفعيل السلو مود ${seconds} ثانية.` : 'تم إلغاء السلو مود.');
+      }
+      if (command === 'say') return message.channel.send(argumentsList.join(' ') || shortcutUsage(shortcutName, command));
+      if (command === 'announce' || command === 'embed') return message.channel.send({ embeds: [lumeraEmbed(command === 'announce' ? '📢 إعلان' : '✨ Lumera', argumentsList.join(' ') || shortcutUsage(shortcutName, command), command === 'announce' ? 0x3568e5 : 0x8f79e8)] });
+      if (command === 'serverstats') {
+        const users = Object.values(getGuildData(message.guild.id).users || {});
+        return message.reply(`📊 الأعضاء: ${message.guild.memberCount}\nمستخدمو النظام: ${users.length}\nإجمالي XP: ${users.reduce((sum, user) => sum + user.xp, 0)}\nإجمالي Coins: ${users.reduce((sum, user) => sum + user.coins, 0)}`);
       }
       const mentionedTarget = message.mentions.members.first();
       const targetId = argumentsList.find((argument) => /^\d{17,20}$/.test(argument));

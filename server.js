@@ -134,7 +134,7 @@ const server = http.createServer(async (request, response) => {
       const body = await requestBody(request);
         const guild = user.guilds?.find(({ id }) => id === body.guildId);
       if (!guild) return json(response, 403, { error: 'لا تملك صلاحية إدارة هذا السيرفر' });
-      if (!/^[\p{L}\p{N}_-]{1,20}$/u.test(body.name || '') || !['invite', 'clear', 'kick', 'ban', 'timeout', 'untimeout', 'lock', 'unlock', 'slowmode', 'warn', 'role_add', 'role_remove'].includes(body.command)) return json(response, 400, { error: 'بيانات الاختصار غير صحيحة' });
+      if (!/^[\p{L}\p{N}_-]{1,20}$/u.test(body.name || '') || !['invite', 'clear', 'kick', 'ban', 'timeout', 'untimeout', 'lock', 'unlock', 'slowmode', 'warn', 'role_add', 'role_remove', 'say', 'announce', 'embed', 'serverstats'].includes(body.command)) return json(response, 400, { error: 'بيانات الاختصار غير صحيحة' });
       const config = await readConfig();
       config.guilds[guild.id] ||= { shortcuts: {} };
       config.guilds[guild.id].shortcuts[body.name.toLowerCase().replace(/^!+/, '')] = body.command;
@@ -168,7 +168,7 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await requestBody(request);
       const guild = user.guilds?.find(({ id }) => id === body.guildId);
-      const allowed = new Set(['invite', 'clear', 'kick', 'ban', 'timeout', 'untimeout', 'lock', 'unlock', 'slowmode', 'warn', 'role']);
+      const allowed = new Set(['help', 'ping', 'server', 'invite', 'clear', 'kick', 'ban', 'timeout', 'untimeout', 'lock', 'unlock', 'slowmode', 'warn', 'role', 'profile', 'balance', 'daily', 'quest', 'leaderboard', 'pay', 'shop', 'coinflip', 'achievement', 'title', 'mystery', 'redeem', 'redeem-create', 'level-role', 'event', 'challenge', 'season', 'welcome', 'custom-reply', 'automod', 'setup-logs']);
       if (!guild || !body.settings || typeof body.settings.enabledCommands !== 'object') return json(response, 403, { error: 'لا تملك صلاحية إدارة هذا السيرفر' });
       const enabledCommands = Object.fromEntries(Object.entries(body.settings.enabledCommands).filter(([command, enabled]) => allowed.has(command) && typeof enabled === 'boolean'));
       const config = await readConfig();

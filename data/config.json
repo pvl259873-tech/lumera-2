@@ -1,1 +1,99 @@
-{"guilds":{}}
+{
+  "guilds": {
+    "1468270997965639722": {
+      "shortcuts": {},
+      "settings": {},
+      "users": {
+        "1183038874478452861": {
+          "xp": 295,
+          "coins": 11,
+          "streak": 1,
+          "lastDaily": "2026-09-02",
+          "suggestions": 0,
+          "quest": {
+            "date": "2026-09-02",
+            "progress": 10,
+            "claimed": true
+          },
+          "achievements": [
+            "first-xp"
+          ],
+          "title": "Active",
+          "activity": 0,
+          "mysteryClaimed": true
+        },
+        "1488683025461153942": {
+          "xp": 250,
+          "coins": 50,
+          "streak": 0,
+          "lastDaily": null,
+          "suggestions": 0,
+          "quest": {
+            "date": "2026-09-02",
+            "progress": 10,
+            "claimed": true
+          },
+          "achievements": [],
+          "title": "",
+          "activity": 0,
+          "mysteryClaimed": false
+        }
+      },
+      "logs": {
+        "command": "1544675716875026485",
+        "mod": "1544675719039164429",
+        "role": "1544675721564397659",
+        "security": "1544675724047159377",
+        "member": "1544675725708107918",
+        "message": "1544675728178683955",
+        "suggestion": "1544675730401660940",
+        "economy": "1544675732779835403",
+        "quest": "1544675735040692376",
+        "system": "1544675739503296582"
+      },
+      "automod": {
+        "links": true,
+        "caps": false
+      },
+      "challenge": {
+        "name": "اعلى تفاعل",
+        "endsAt": 1788350067833,
+        "scores": {
+          "1183038874478452861": 40,
+          "1488683025461153942": 20
+        }
+      },
+      "events": {
+        "1788349567335-1183038874478452861": {
+          "name": "انا",
+          "description": "انت",
+          "endsAt": 1788349627335,
+          "participants": [
+            "1183038874478452861"
+          ]
+        }
+      },
+      "levelRoles": {
+        "10": "1544674529249595442"
+      },
+      "suggestions": {
+        "1788349808635-1183038874478452861": {
+          "authorId": "1183038874478452861",
+          "text": "اولا",
+          "upvotes": 0,
+          "downvotes": 1,
+          "voters": {
+            "1488683025461153942": "down"
+          }
+        }
+      },
+      "season": {
+        "name": "الشتاء القارص",
+        "startedAt": "2026-09-02T11:51:05.145Z"
+      },
+      "replies": {
+        "هلا": "هلا"
+      }
+    }
+  }
+}

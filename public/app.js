@@ -19,7 +19,7 @@ const guildSelect = document.querySelector('#guildSelect');
 const shortcutList = document.querySelector('#shortcutList');
 const shortcutForm = document.querySelector('#shortcutForm');
 let selectedGuild = '';
-const commandNames = { invite: 'تقرير الدعوات', clear: 'مسح الرسائل', kick: 'طرد', ban: 'حظر', timeout: 'تايم أوت', untimeout: 'إزالة التايم أوت', lock: 'قفل الشات', unlock: 'فتح الشات', slowmode: 'السلو مود', warn: 'تحذير', role: 'إدارة الرتب' };
+const commandNames = { help: 'المساعدة', ping: 'فحص الاتصال', server: 'معلومات السيرفر', invite: 'تقرير الدعوات', clear: 'مسح الرسائل', kick: 'طرد', ban: 'حظر', timeout: 'تايم أوت', untimeout: 'إزالة التايم أوت', lock: 'قفل الشات', unlock: 'فتح الشات', slowmode: 'السلو مود', warn: 'تحذير', role: 'إدارة الرتب', profile: 'الملف الشخصي', balance: 'الرصيد', daily: 'المكافأة اليومية', quest: 'المهام', leaderboard: 'المتصدرون', pay: 'التحويل', shop: 'المتجر', coinflip: 'لعبة العملة', suggest: 'الاقتراحات', achievement: 'الإنجازات', title: 'الألقاب', mystery: 'المكافآت الغامضة', redeem: 'استرداد الأكواد', 'redeem-create': 'إنشاء أكواد', 'level-role': 'رتب المستويات', event: 'الفعاليات', challenge: 'التحديات', season: 'المواسم', welcome: 'الترحيب', 'custom-reply': 'الردود التلقائية', automod: 'الحماية', 'setup-logs': 'قنوات اللوق', say: 'إرسال رسالة', announce: 'الإعلانات', embed: 'الـ Embeds', serverstats: 'إحصاءات السيرفر' };
 const commandSettings = document.querySelector('#commandSettings');
 const loadSettings = async () => {
   if (!selectedGuild) return;

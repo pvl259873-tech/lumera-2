@@ -26,6 +26,8 @@ npm run bot
 
 الأوامر المتاحة: `/clear` و`/kick` و`/ban` و`/timeout` و`/untimeout` و`/lock` و`/unlock` و`/slowmode` و`/warn` و`/role add` و`/role remove`. للأوامر العامة استخدم `/ping` و`/server` و`/invite`. للاختصارات استخدم `/shortcut add`، ثم اكتبها مع `!` مثل `!روليت`.
 
+الأنظمة الإضافية: `/help` للمساعدة، `/profile` و`/balance` و`/daily` و`/quest` و`/leaderboard` للـXP والعملات والتقدم، `/pay` و`/shop list` و`/shop buy` و`/coinflip` و`/redeem` للاقتصاد، `/suggest` للاقتراحات والتصويت، `/create-role` لإنشاء رتبة آمنة، `/setup-logs` لإنشاء قنوات اللوق تلقائيًا، و`/custom-reply` و`/automod` للردود والحماية، و`/challenge` و`/season` للتحديات والمواسم.
+
 لتعمل الاختصارات النصية مثل `!مسح 10`، فعّل **Message Content Intent** من Discord Developer Portal، ثم أضف `ENABLE_TEXT_SHORTCUTS=true` في `.env` وأعد تشغيل البوت. إذا تركتها `false` يظل البوت يعمل وتبقى أوامر `/shortcut` متاحة للإعداد.
 
 لعرض الانضمامات المؤكدة عبر الدعوات، فعّل **Server Members Intent** من Discord Developer Portal، ثم أضف `ENABLE_INVITE_TRACKING=true` في `.env` وأعد تشغيل البوت. أمر `/invite` يعرض التقرير مع صورة المستخدم المصغرة.
@@ -36,6 +38,8 @@ npm run bot
 - بوت Discord فعلي بأوامر Slash للإدارة والأوامر العامة والإنفايت.
 - اختصارات إدارية قابلة للإضافة والحذف والعرض.
 - أوامر إدارية محمية بصلاحيات Discord.
+- نظام XP مع Cooldown، مهام يومية، Streak، عملات، تحويل، ترتيب، ولعبة Coinflip.
+- اقتراحات بتصويت ومنع التصويت المتكرر، ومولّد رتب بدون صلاحيات خطرة.
 - خادم HTTP خفيف مع endpoint للصحة وتسجيل حسابات لوحة التحكم، مناسب للتشغيل خلف reverse proxy.
 - ملف بيئة منفصل لأسرار Discord.
 
