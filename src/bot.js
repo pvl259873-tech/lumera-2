@@ -115,7 +115,7 @@ const logAction = async (guild, type, title, fields) => {
   const channelId = getGuildData(guild.id).logs?.[type];
   if (!channelId) return;
   const channel = guild.channels.cache.get(channelId) || await guild.channels.fetch(channelId).catch(() => null);
-  if (channel?.isTextBased()) await channel.send({ embeds: [lumeraEmbed(title, '', 0x758090).addFields(fields)] }).catch(() => {});
+  if (channel?.isTextBased()) await channel.send({ embeds: [lumeraEmbed(title, 'تم تسجيل العملية.', 0x758090).addFields(fields)] }).catch(() => {});
 };
 
 if (!token || !clientId) {
